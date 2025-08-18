@@ -13,6 +13,8 @@ Flags:
   --user=postgres           Postgres username (same for all nodes)
   --pass=<password>         Postgres password (same for all nodes)
   --workers=1               Number of workers to generate (1..N)
+  --no-prompt               Do not prompt for missing values; still asks before overwriting files unless --force
+  --force                   Overwrite existing files (.env, docker-compose.yml) without confirmation
   -h | --help               Show this help
 
 Examples:
@@ -30,27 +32,41 @@ WORKERS=1
 POSTGRES_DB="postgres"
 COORD_NAME="citus-coordinator"
 
+# Flags/markers
+NO_PROMPT=0
+FORCE=0
+# Colors
+RED='\033[0;31m'
+NC='\033[0m'
+USER_SET=0
+PASS_SET=0
+PORT_SET=0
+WORKERS_SET=0
+WITH_COORD_SET=0
+
 # Parse flags
 for arg in "$@"; do
   case $arg in
-    --with-coordinator) WITH_COORD=1 ;;
-    --port=*) BASE_PORT="${arg#*=}" ;;
-    --user=*) POSTGRES_USER="${arg#*=}" ;;
-    --pass=*) POSTGRES_PASSWORD="${arg#*=}" ;;
-    --workers=*) WORKERS="${arg#*=}" ;;
+    --with-coordinator) WITH_COORD=1; WITH_COORD_SET=1 ;;
+    --port=*) BASE_PORT="${arg#*=}"; PORT_SET=1 ;;
+    --user=*) POSTGRES_USER="${arg#*=}"; USER_SET=1 ;;
+    --pass=*) POSTGRES_PASSWORD="${arg#*=}"; PASS_SET=1 ;;
+    --workers=*) WORKERS="${arg#*=}"; WORKERS_SET=1 ;;
+    --no-prompt) NO_PROMPT=1 ;;
+    --force) FORCE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown flag: $arg"; usage; exit 1 ;;
   esac
 done
 
-# Prompts for missing inputs
-read -r -p "Postgres username [${POSTGRES_USER}]: " _in || true
-POSTGRES_USER="${_in:-$POSTGRES_USER}"
+# Prompts for missing inputs (skip if values provided or --no-prompt)
+if [[ "${USER_SET}" -eq 0 && "${NO_PROMPT}" -eq 0 ]]; then
+  read -r -p "Postgres username [${POSTGRES_USER}]: " _in || true
+  POSTGRES_USER="${_in:-$POSTGRES_USER}"
+fi
 
-if [[ -z "${POSTGRES_PASSWORD}" ]]; then
-  read -r -s -p "Postgres password [auto-generate]: " _pw || true
-  echo
-  if [[ -z "${_pw}" ]]; then
+if [[ "${PASS_SET}" -eq 0 && -z "${POSTGRES_PASSWORD}" ]]; then
+  if [[ "${NO_PROMPT}" -eq 1 ]]; then
     if command -v openssl >/dev/null 2>&1; then
       POSTGRES_PASSWORD="$(openssl rand -base64 18 | tr -d '\n' | tr '/+=' '-_A' | cut -c1-24)"
     else
@@ -58,27 +74,49 @@ if [[ -z "${POSTGRES_PASSWORD}" ]]; then
     fi
     echo "Generated password: ${POSTGRES_PASSWORD}"
   else
-    POSTGRES_PASSWORD="${_pw}"
+    read -r -s -p "Postgres password [auto-generate]: " _pw || true
+    echo
+    if [[ -z "${_pw}" ]]; then
+      if command -v openssl >/dev/null 2>&1; then
+        POSTGRES_PASSWORD="$(openssl rand -base64 18 | tr -d '\n' | tr '/+=' '-_A' | cut -c1-24)"
+      else
+        POSTGRES_PASSWORD="$(head -c 32 /dev/urandom | base64 | tr -d '\n' | tr '/+=' '-_A' | cut -c1-24)"
+      fi
+      echo "Generated password: ${POSTGRES_PASSWORD}"
+    else
+      POSTGRES_PASSWORD="${_pw}"
+    fi
   fi
 fi
 
-read -r -p "Coordinator host port [${BASE_PORT}]: " _p || true
-BASE_PORT="${_p:-$BASE_PORT}"
+if [[ "${PORT_SET}" -eq 0 && "${NO_PROMPT}" -eq 0 ]]; then
+  read -r -p "Coordinator host port [${BASE_PORT}]: " _p || true
+  BASE_PORT="${_p:-$BASE_PORT}"
+fi
 
-read -r -p "Number of workers [${WORKERS}]: " _w || true
-WORKERS="${_w:-$WORKERS}"
+if [[ "${WORKERS_SET}" -eq 0 && "${NO_PROMPT}" -eq 0 ]]; then
+  read -r -p "Number of workers [${WORKERS}]: " _w || true
+  WORKERS="${_w:-$WORKERS}"
+fi
 
-read -r -p "Include coordinator service? (y/N) " _c || true
-if [[ "${_c:-}" =~ ^[Yy]$ ]]; then WITH_COORD=1; fi
+if [[ "${WITH_COORD_SET}" -eq 0 && "${NO_PROMPT}" -eq 0 ]]; then
+  read -r -p "Include coordinator service? (y/N) " _c || true
+  if [[ "${_c:-}" =~ ^[Yy]$ ]]; then WITH_COORD=1; fi
+fi
 
 # Write .env
 ENV_FILE=".env"
 if [[ -f "${ENV_FILE}" ]]; then
-  read -r -p ".env exists. Overwrite? (y/N) " _ow || true
-  if [[ ! "${_ow:-}" =~ ^[Yy]$ ]]; then
-    echo "Keeping existing .env"
-  else
+  if [[ "${FORCE}" -eq 1 ]]; then
+    echo -e "${RED}${ENV_FILE} already exists. Overwriting due to --force.${NC}"
     : > "${ENV_FILE}"
+  else
+    read -r -p "$(printf "${RED}%s${NC}" "${ENV_FILE} already exists. Do you want to overwrite it? (y/N) ")" _ow || true
+    if [[ ! "${_ow:-}" =~ ^[Yy]$ ]]; then
+      echo "Keeping existing .env"
+    else
+      : > "${ENV_FILE}"
+    fi
   fi
 fi
 
@@ -100,9 +138,10 @@ fi
 mkdir -p initdb/coordinator initdb/worker
 
 # Coordinator init SQL (runs once on first init)
-cat > initdb/coordinator/01_citus.sql <<'SQL'
+cat > initdb/coordinator/01_citus.sql <<SQL
 -- Runs inside the coordinator container on first init
 CREATE EXTENSION IF NOT EXISTS citus;
+SELECT citus_set_coordinator_host('coordinator', 5432);
 -- Optional: set defaults cluster-wide later in a session or via ALTER SYSTEM
 -- ALTER SYSTEM SET citus.shard_count = 64;
 -- ALTER SYSTEM SET citus.shard_replication_factor = 1;
@@ -116,80 +155,111 @@ CREATE EXTENSION IF NOT EXISTS citus;
 SELECT citus_version();
 SQL
 
-# Generate docker-compose.yml
+# Generate docker-compose.yml from templates
 COMPOSE_FILE="docker-compose.yml"
-echo "Generating ${COMPOSE_FILE} ..."
+TEMPLATE_DIR="compose_templates"
+COORD_TEMPLATE="${TEMPLATE_DIR}/coordinator.yml"
+WORKER_TEMPLATE="${TEMPLATE_DIR}/worker.yml"
 
-cat > "${COMPOSE_FILE}" <<'YAML'
+WRITE_COMPOSE=1
+if [[ -f "${COMPOSE_FILE}" ]]; then
+  if [[ "${FORCE}" -eq 1 ]]; then
+    echo -e "${RED}${COMPOSE_FILE} already exists. Overwriting due to --force.${NC}"
+  else
+    read -r -p "$(printf "${RED}%s${NC}" "${COMPOSE_FILE} already exists. Do you want to overwrite it? (y/N) ")" _owc || true
+    if [[ ! "${_owc:-}" =~ ^[Yy]$ ]]; then
+      echo "Keeping existing ${COMPOSE_FILE}"
+      WRITE_COMPOSE=0
+    fi
+  fi
+fi
+
+if [[ "${WRITE_COMPOSE}" -eq 1 ]]; then
+  echo "Generating ${COMPOSE_FILE} ..."
+
+# Helper to append a template with simple ${VAR} replacements for provided keys only
+# Usage: append_template <template_path> <indent_prefix> [KEY=VALUE...]
+append_template() {
+  local template_path="$1"; shift
+  local indent_prefix="$1"; shift
+  local sed_expr=()
+  local kv
+  for kv in "$@"; do
+    local key="${kv%%=*}"
+    local val="${kv#*=}"
+    # Escape sed-sensitive chars for delimiter '|'
+    local val_esc
+    val_esc=$(printf '%s' "${val}" | sed -e 's/[\\|&]/\\&/g')
+    # Build a literal placeholder like ${KEY} without nested expansion
+    local placeholder
+    printf -v placeholder '\${%s}' "${key}"
+    sed_expr+=(-e "s|${placeholder}|${val_esc}|g")
+  done
+  if [[ ${#sed_expr[@]} -eq 0 ]]; then
+    if [[ -n "${indent_prefix}" ]]; then
+      sed -e "s/^/${indent_prefix}/" "${template_path}" >> "${COMPOSE_FILE}"
+    else
+      cat "${template_path}" >> "${COMPOSE_FILE}"
+    fi
+  else
+    if [[ -n "${indent_prefix}" ]]; then
+      sed "${sed_expr[@]}" "${template_path}" | sed -e "s/^/${indent_prefix}/" >> "${COMPOSE_FILE}"
+    else
+      sed "${sed_expr[@]}" "${template_path}" >> "${COMPOSE_FILE}"
+    fi
+  fi
+}
+
+  # Header (networks first, then services)
+  cat > "${COMPOSE_FILE}" <<'YAML'
 version: "3.8"
+networks:
+  citus:
+    driver: bridge
 services:
 YAML
 
-if [[ "${WITH_COORD}" -eq 1 ]]; then
-cat >> "${COMPOSE_FILE}" <<'YAML'
-  coordinator:
-    image: citusdata/citus:13.0.3-pg15
-    container_name: ${COORD_CONTAINER}
-    ports:
-      - "${COORD_PORT}:5432"
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-      # Useful for psql connections initiated from inside the container
-      PGUSER: ${POSTGRES_USER}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - ./initdb/coordinator:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-YAML
-fi
-
-# Workers
-for i in $(seq 1 "${WORKERS}"); do
-  WNAME="citus-worker${i}"
-  HPORT=$(( BASE_PORT + i )) # workers on incremented host ports
-  cat >> "${COMPOSE_FILE}" <<YAML
-  worker${i}:
-    image: citusdata/citus:13.0.3-pg15
-    container_name: ${WNAME}
-    environment:
-      POSTGRES_USER: \${POSTGRES_USER}
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
-      POSTGRES_DB: \${POSTGRES_DB}
-      PGUSER: \${POSTGRES_USER}
-      PGPASSWORD: \${POSTGRES_PASSWORD}
-    ports:
-      - "${HPORT}:5432"
-    volumes:
-      - ./initdb/worker:/docker-entrypoint-initdb.d
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER} -d \${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
-    restart: unless-stopped
-YAML
-
-  # If coordinator exists, ensure workers start after it
+  # Coordinator (optional)
   if [[ "${WITH_COORD}" -eq 1 ]]; then
-    # Append depends_on for the just-written worker service
-    # (Simplest: sed append depends_on under the worker block)
-    # Here we won't mutate; Docker will start fine in any order, but registration happens later anyway.
-    :
+    if [[ ! -f "${COORD_TEMPLATE}" ]]; then
+      echo "Missing coordinator template: ${COORD_TEMPLATE}" >&2
+      exit 1
+    fi
+    append_template "${COORD_TEMPLATE}" "  " \
+      COORD_CONTAINER="${COORD_NAME}" \
+      COORD_PORT="${BASE_PORT}"
   fi
-done
 
-echo "Wrote ${COMPOSE_FILE}"
+  # Workers
+  if [[ ! -f "${WORKER_TEMPLATE}" ]]; then
+    echo "Missing worker template: ${WORKER_TEMPLATE}" >&2
+    exit 1
+  fi
+
+  for i in $(seq 1 "${WORKERS}"); do
+    WORKER_CONTAINER="citus-worker${i}"
+    WORKER_HOST_PORT=$(( BASE_PORT + i ))
+    # Inline depends_on one-liner to avoid multiline sed
+    if [[ "${WITH_COORD}" -eq 1 ]]; then
+      WORKER_DEPENDS_ON_INLINE="depends_on: [coordinator]"
+    else
+      WORKER_DEPENDS_ON_INLINE=""
+    fi
+    append_template "${WORKER_TEMPLATE}" "  " \
+      WORKER_INDEX="${i}" \
+      WORKER_CONTAINER="${WORKER_CONTAINER}" \
+      WORKER_HOST_PORT="${WORKER_HOST_PORT}" \
+      WORKER_DEPENDS_ON_INLINE="${WORKER_DEPENDS_ON_INLINE}"
+  done
+
+  echo "Wrote ${COMPOSE_FILE}"
+fi
 
 cat <<NEXT
 
 Done. Next steps:
+
+0) Review .env and docker-compose.yml
 
 1) Start containers:
    docker compose up -d

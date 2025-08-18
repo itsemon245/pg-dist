@@ -1,10 +1,13 @@
 version: "3.8"
+networks:
+  citus:
+    driver: bridge
 services:
   coordinator:
-    image: citusdata/citus:13.0.3-pg15
-    container_name: ${COORD_CONTAINER}
+    image: citusdata/citus:13.0.3
+    container_name: citus-coordinator
     ports:
-      - "${COORD_PORT}:5432"
+      - "6432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -15,13 +18,16 @@ services:
     volumes:
       - ./initdb/coordinator:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    networks:
+      - citus
   worker1:
-    image: citusdata/citus:13.0.3-pg15
+    image: citusdata/citus:13.0.3
     container_name: citus-worker1
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -34,13 +40,17 @@ services:
     volumes:
       - ./initdb/worker:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    networks:
+      - citus
+    depends_on: [coordinator]
   worker2:
-    image: citusdata/citus:13.0.3-pg15
+    image: citusdata/citus:13.0.3
     container_name: citus-worker2
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -53,8 +63,12 @@ services:
     volumes:
       - ./initdb/worker:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    networks:
+      - citus
+    depends_on: [coordinator]

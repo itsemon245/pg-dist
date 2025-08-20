@@ -147,7 +147,12 @@ SELECT citus_version();
 pg-dist/
 ├── setup_citus_cluster.sh      # Main cluster setup script
 ├── add_worker_to_coordinator.sh # Worker registration script
-├── compose_templates/          # Docker Compose templates
+├── templates/                  # Docker Compose templates
+│   ├── coordinator.yml        # Coordinator service template
+│   └── worker.yml             # Worker service template
+├── config/                     # PostgreSQL configuration files
+│   ├── coordinator.conf       # PostgreSQL config for coordinator
+│   └── worker.conf            # PostgreSQL config for worker
 ├── initdb/                     # Database initialization scripts
 ├── docs/                       # Detailed documentation
 │   ├── concepts.md            # Architecture and concepts

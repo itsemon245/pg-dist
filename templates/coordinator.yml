@@ -1,6 +1,7 @@
 coordinator:
   image: citusdata/citus:13.0.3
   container_name: ${COORD_CONTAINER}
+  command: postgres -c config_file=/etc/postgresql/postgresql.conf
   ports:
     - "${COORD_PORT}:5432"
   environment:
@@ -12,6 +13,7 @@ coordinator:
     PGPASSWORD: ${POSTGRES_PASSWORD}
   volumes:
     - ./initdb/coordinator:/docker-entrypoint-initdb.d
+    - ./config/coordinator.conf:/etc/postgresql/postgresql.conf
   healthcheck:
     test:
       ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]

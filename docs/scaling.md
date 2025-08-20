@@ -25,7 +25,7 @@ docker compose up -d
 
 ### Multi-Server Setup
 
-For adding new worker servers, see the [Multi-Server Setup Guide](../MULTI_SERVER_SETUP.md#scaling-operations).
+For adding new worker servers, see the [Multi-Server Setup Guide](multi-server-setup.md#scaling-operations).
 
 ## Rebalancing Data
 

@@ -209,7 +209,6 @@ Then use hostnames in registration:
 - RAM: 16-64GB+ (data caching and sorting)
 - Storage: Fast SSD with high IOPS for data storage
 
-
 ## Operational Commands
 
 ### Cluster Management

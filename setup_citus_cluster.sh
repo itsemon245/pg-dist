@@ -212,7 +212,6 @@ append_template() {
 
   # Header (networks first, then services)
   cat > "${COMPOSE_FILE}" <<'YAML'
-version: "3.8"
 networks:
   citus:
     driver: bridge

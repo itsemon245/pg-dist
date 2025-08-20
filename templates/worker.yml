@@ -1,6 +1,7 @@
 worker${WORKER_INDEX}:
   image: citusdata/citus:13.0.3
   container_name: ${WORKER_CONTAINER}
+  command: postgres -c config_file=/etc/postgresql/postgresql.conf
   environment:
     POSTGRES_USER: ${POSTGRES_USER}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -11,6 +12,7 @@ worker${WORKER_INDEX}:
     - "${WORKER_HOST_PORT}:5432"
   volumes:
     - ./initdb/worker:/docker-entrypoint-initdb.d
+    - ./config/worker.conf:/etc/postgresql/postgresql.conf
   healthcheck:
     test:
       ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]

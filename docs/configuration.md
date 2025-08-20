@@ -1,5 +1,59 @@
 # Configuration and Performance Tuning
 
+## PostgreSQL Configuration Files
+
+The setup includes optimized PostgreSQL configuration files for different node types:
+
+### Coordinator Configuration (`config/coordinator.conf`)
+
+Optimized for query planning, metadata management, and connection routing:
+
+- **Memory**: Moderate settings (256MB shared_buffers, 1GB effective_cache_size)
+- **Connections**: Higher max_connections (200) for client requests
+- **Logging**: Verbose logging for DDL and slow queries (>1s)
+- **Parallel Processing**: Moderate parallelism (8 workers, 4 per gather)
+
+### Worker Configuration (`config/worker.conf`)
+
+Optimized for data processing and heavy workloads:
+
+- **Memory**: Higher settings (512MB shared_buffers, 2GB effective_cache_size)
+- **Connections**: Fewer connections (100) as they're mostly from coordinator
+- **Logging**: Less verbose, only very slow queries (>5s)
+- **Parallel Processing**: Higher parallelism (16 workers, 8 per gather)
+- **I/O**: Optimized for bulk operations and SSD storage
+
+### Customizing Configuration
+
+To modify PostgreSQL settings:
+
+1. **Edit the configuration files**:
+
+   ```bash
+   # Edit coordinator settings
+   nano config/coordinator.conf
+
+   # Edit worker settings
+   nano config/worker.conf
+   ```
+
+2. **Restart containers to apply changes**:
+
+   ```bash
+   # Restart all containers to pick up new config
+   docker compose restart
+
+   # Or force recreate containers
+   docker compose up -d --force-recreate
+   ```
+
+3. **Or apply runtime changes** (some settings require restart):
+   ```sql
+   -- Connect to coordinator
+   ALTER SYSTEM SET work_mem = '64MB';
+   SELECT pg_reload_conf();
+   ```
+
 ## Environment Variables
 
 The `.env` file contains cluster configuration:

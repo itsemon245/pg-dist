@@ -157,7 +157,7 @@ SQL
 
 # Generate docker-compose.yml from templates
 COMPOSE_FILE="docker-compose.yml"
-TEMPLATE_DIR="compose_templates"
+TEMPLATE_DIR="templates"
 COORD_TEMPLATE="${TEMPLATE_DIR}/coordinator.yml"
 WORKER_TEMPLATE="${TEMPLATE_DIR}/worker.yml"
 

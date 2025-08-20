@@ -116,6 +116,7 @@ SELECT citus_version();
 ### 📚 Core Concepts
 
 - **[Citus Architecture & Concepts](docs/concepts.md)** - Understanding distributed databases, sharding, and distribution keys
+- **[Terminology](docs/terminology.md)** - Glossary of distributed database and Citus terms
 - **[Multi-Server Setup](docs/multi-server-setup.md)** - Production deployment across multiple servers
 
 ### 🛠️ Database Operations
@@ -134,6 +135,7 @@ SELECT citus_version();
 | ----------------------- | ------------------------------------------------ | -------------------------------------------------- |
 | **Getting Started**     | Setup scripts, Docker deployment                 | ↑ Quick Start above                                |
 | **Architecture**        | Coordinator/workers, sharding, distribution keys | [Concepts](docs/concepts.md)                       |
+| **Terminology**         | Glossary of distributed database terms           | [Terminology](docs/terminology.md)                 |
 | **Table Design**        | Distributed vs reference vs local tables         | [Database Operations](docs/database-operations.md) |
 | **Query Performance**   | Single-worker vs scatter-gather patterns         | [Database Operations](docs/database-operations.md) |
 | **Adding Workers**      | Scaling horizontally, rebalancing                | [Scaling](docs/scaling.md)                         |
@@ -156,6 +158,7 @@ pg-dist/
 ├── initdb/                     # Database initialization scripts
 ├── docs/                       # Detailed documentation
 │   ├── concepts.md            # Architecture and concepts
+│   ├── terminology.md         # Glossary of terms
 │   ├── database-operations.md # Tables, queries, performance
 │   ├── scaling.md             # Adding workers and rebalancing
 │   ├── configuration.md       # Performance tuning

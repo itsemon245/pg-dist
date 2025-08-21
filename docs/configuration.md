@@ -65,7 +65,7 @@ POSTGRES_PASSWORD=auto-generated-password
 POSTGRES_DB=postgres
 
 # Network configuration
-COORD_PORT=6432
+COORD_PORT=5432
 COORD_CONTAINER=citus-coordinator
 
 # Cluster topology
@@ -73,7 +73,7 @@ WORKERS=2
 WITH_COORDINATOR=1
 ```
 
-## Citus Configuration
+## Citus Configuration(runs only once when the container is first created)
 
 Key settings in `initdb/coordinator/01_citus.sql`:
 
@@ -158,127 +158,6 @@ ALTER SYSTEM SET citus.shard_replication_factor = 2;
 
 -- For maximum performance (single copy)
 ALTER SYSTEM SET citus.shard_replication_factor = 1;
-```
-
-## Connection Management
-
-### Connection Pooling
-
-```sql
--- Enable connection pooling between coordinator and workers
-ALTER SYSTEM SET citus.max_adaptive_executor_pool_size = 16;
-
--- Connection limits
-ALTER SYSTEM SET citus.executor_slow_start_interval = 10;
-ALTER SYSTEM SET citus.max_worker_nodes_tracked = 100;
-```
-
-### External Connection Pooling
-
-For high-traffic applications, use pgBouncer:
-
-```yaml
-# docker-compose.yml addition
-pgbouncer:
-  image: pgbouncer/pgbouncer:latest
-  environment:
-    DATABASES_HOST: citus-coordinator
-    DATABASES_PORT: 5432
-    DATABASES_USER: postgres
-    DATABASES_PASSWORD: ${POSTGRES_PASSWORD}
-    DATABASES_DBNAME: postgres
-    POOL_MODE: transaction
-    MAX_CLIENT_CONN: 1000
-    DEFAULT_POOL_SIZE: 25
-  ports:
-    - "6543:5432"
-```
-
-## Query Performance Configuration
-
-### Execution Planning
-
-```sql
--- Enable adaptive executor for better performance
-ALTER SYSTEM SET citus.task_executor_type = 'adaptive';
-
--- Query optimization
-ALTER SYSTEM SET citus.enable_router_execution = on;
-ALTER SYSTEM SET citus.enable_repartition_joins = on;
-
--- Subquery pushdown
-ALTER SYSTEM SET citus.subquery_pushdown = on;
-ALTER SYSTEM SET citus.enable_cte_inlining = on;
-```
-
-### Statistics and Planning
-
-```sql
--- Auto-analyze settings
-ALTER SYSTEM SET track_counts = on;
-ALTER SYSTEM SET autovacuum = on;
-ALTER SYSTEM SET autovacuum_analyze_scale_factor = 0.1;
-
--- Statistics collection
-ALTER SYSTEM SET track_activities = on;
-ALTER SYSTEM SET track_io_timing = on;
-ALTER SYSTEM SET log_executor_stats = on;
-```
-
-## Monitoring Configuration
-
-### Enable Statistics
-
-```sql
--- Enable Citus statistics extension
-CREATE EXTENSION IF NOT EXISTS citus_stat_statements;
-
--- Configure statement tracking
-ALTER SYSTEM SET citus.stat_statements_track = 'all';
-ALTER SYSTEM SET citus.stat_statements_max = 10000;
-
--- Query duration logging
-ALTER SYSTEM SET log_min_duration_statement = 5000;  -- 5 seconds
-```
-
-### Metrics Collection
-
-```yaml
-# Add to docker-compose.yml for Prometheus monitoring
-postgres_exporter:
-  image: prometheuscommunity/postgres-exporter
-  environment:
-    DATA_SOURCE_NAME: "postgresql://postgres:${POSTGRES_PASSWORD}@citus-coordinator:5432/postgres?sslmode=disable"
-    PG_EXPORTER_EXTEND_QUERY_PATH: "/etc/postgres_exporter/queries.yaml"
-  ports:
-    - "9187:9187"
-  volumes:
-    - ./monitoring/queries.yaml:/etc/postgres_exporter/queries.yaml:ro
-```
-
-## Security Configuration
-
-### SSL/TLS Settings
-
-```sql
--- Enable SSL
-ALTER SYSTEM SET ssl = on;
-ALTER SYSTEM SET ssl_cert_file = '/path/to/server.crt';
-ALTER SYSTEM SET ssl_key_file = '/path/to/server.key';
-ALTER SYSTEM SET ssl_ca_file = '/path/to/ca.crt';
-
--- Force SSL connections
-ALTER SYSTEM SET ssl_require = on;
-```
-
-### Authentication
-
-```sql
--- Configure pg_hba.conf for secure access
--- Example entries:
--- hostssl all postgres coordinator.internal cert
--- hostssl all postgres worker1.internal cert
--- hostssl all app_user 0.0.0.0/0 md5
 ```
 
 ## Resource Management
